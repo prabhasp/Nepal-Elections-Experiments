@@ -48,7 +48,7 @@ bestmatches <- function(col1, col2, MD=3) {
 }
 suggested_corrections <- 
   ddply(gadmmissing, .(NAME_3), function(df) {
-    vdcsfordistrict <- subset(vdcmissing, District == df[1,'NAME_3'])
+    vdcsfordistrict <- subset(vdcs, District == df[1,'NAME_3'])
     bestmatches(df$NAME_4, vdcsfordistrict$VDC_name)
   })
 # manual inspection proves that these are okay; might be worth doing another look-through
@@ -63,9 +63,15 @@ gadmmissing <- gadm[!gadm$NAME_4_CORRECTED %in% vdcs$VDC_name &
 suggested_corrections2 <- ldply(gadmmissing$NAME_4_CORRECTED, function(name) {
   data.frame(
     old=name,
-    bestmatch=vdcmissing$VDC_name[pmatch(name, vdcmissing$VDC_name)],
+    bestmatch=vdcs$VDC_name[pmatch(name, vdcs$VDC_name)],
     stringsAsFactors=F
   )})
+# some manual additions
+suggested_corrections2 <- rbind(suggested_corrections2, data.frame(
+  old=c("Piparpati Jabadi", "NaikapPuranoBhanjya","PokharibhindaSamgra", # just missed above
+        "n.a. (1)", "n.a. (2)", "KalikaN.P."), # from manual map inspections
+  bestmatch=c("Paparpatijabdi", "Naikappuranobhanjyang", "Pokharibhindasamgrampur",
+              "Raghunathpur", "Rampurwa", "Baglung N.P.")))
 
 gadm$NAME_4_CORRECTED <- recodeVar(gadm$NAME_4_CORRECTED,
                          na.omit(suggested_corrections2)$old,
@@ -82,3 +88,7 @@ write.csv(gadmmissing, "data/MissingFromGADM.csv")
 write.csv(vdcmissing, "data/MissingFromVDCCodes.csv")
 write.csv(corrections, "data/Corrections.csv")
 write.csv(gadm, "data/NPL_adm4.csv")
+
+## FINAL task: polygon output
+gadm.shp <- readShapeSpatial('../NepalMaps/baselayers/NPL_adm/NPL_adm4.shp')
+gadm.shp@data <- merge(gadm.shp@data, subset(gadm, select=c("ID_4", "NAME_4_CORRECTED")), by="ID_4")
