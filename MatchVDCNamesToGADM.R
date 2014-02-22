@@ -16,19 +16,16 @@ non_matching <- function(df1, df2, distCol1, distCol2, vdcCol1, vdcCol2) {
          missing_in_2 = df2[!s2 %in% s1, c(distCol2, vdcCol2)])
 }
 
-
 ## FIRST -- match up the districts
-require(doBy)
+require(plyr)
 unique(vdcs[!vdcs$District %in% gadm$NAME_3,'District'])
 unique(gadm[!gadm$NAME_3 %in% vdcs$District,'NAME_3'])
-gadm$NAME_3 <- recodeVar(gadm$NAME_3, 
-                         c("Chitawan", "Sindhupalchok"), c("Chitwan", "Sindhupalchowk"))
+gadm$NAME_3 <- revalue(gadm$NAME_3, c("Chitawan" = "Chitwan", "Sindhupalchok" = "Sindhupalchowk"))
 stopifnot(length(gadm[!gadm$NAME_3 %in% vdcs$District,'NAME_3']) == 0)
 stopifnot(length(vdcs[!vdcs$District %in% gadm$NAME_3,'District']) == 0)
 
 ## NEXT -- vdcs
 # how many are different?
-require(plyr)
 x <- non_matching(vdcs, gadm, 'District', 'NAME_3', 'VDC_name', 'NAME_4')
 # so many -- lets look at a few after sorting the datasets a bit
 head(x[[1]] <- arrange(x[[1]], District, VDC_name), 12)$VDC_name
