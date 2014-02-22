@@ -44,9 +44,11 @@ gadmmissing <- x[[2]]
 vdcmissing <- x[[1]]
 
 bestmatches <- function(col1, col2, MD=3) {
-    bestmatch <- col2[amatch(col1, col2, maxDist=MD)] # do string distance first
+    col1l <- tolower(col1)
+    col2l <- tolower(col2)
+    bestmatch <- col2[amatch(col1l, col2l, maxDist=MD)] # do string distance first
     bestmatch <- ifelse(is.na(bestmatch),
-                        col2[pmatch(col1, col2)], # pmatch does "first of the string" matching, to recover
+                        col2[pmatch(col1l, col2l)], # pmatch does "first of the string" matching, to recover
                         # shapefile truncation
                         bestmatch)
     data.frame(
@@ -60,56 +62,57 @@ suggested_corrections <-
         vdcsfordistrict <- subset(vdcs, District == df[1,'NAME_3'])
         bestmatches(df$NAME_4, vdcsfordistrict$VDC_name)
     })
-suggested_corrections <- subset(suggested_corrections, !str_detect(old, 'Royal|Natio|Wildlife|Development'))
-subset(suggested_corrections, is.na(bestmatch))
-
+suggested_corrections <- subset(suggested_corrections, 
+                                !str_detect(old, 'Royal|Natio|Wildlife|Development'))
 gadm2 <- ddply(gadm, .(NAME_3), function(df) {
     d = df[1,'NAME_3']
     corr <- na.omit(subset(suggested_corrections, NAME_3 == d))
-    cbind(df, VDC_Name = revalue(df$NAME_4, setNames(corr$bestmatch, corr$old)))
+    cbind(df, VDC_name = revalue(df$NAME_4, setNames(corr$bestmatch, corr$old)))
 })
 
-## ROUND 2
-x <- non_matching(vdcs, gadm2, 'District', 'NAME_3', 'VDC_name', 'VDC_Name')
+## ROUND 2 -- manual matches
+x <- non_matching(vdcs, gadm2, 'District', 'NAME_3', 'VDC_name', 'VDC_name')
 vdcmissing <- x[[1]]
-gadmmissing <- subset(x[[2]], )
+gadmmissing <- subset(x[[2]], 
+                    !str_detect(VDC_name, 'Royal|Natio|Wildlife|Development'))
+suggested_correction_manual <-
+    # CLOSE MATCHES
+    c("Piparpati Jabadi" = "Paparpatijabdi",
+      "Malikathota" = "Malika",
+      "Andheri (Narayanstha" = "Narayansthan",
+      "JaisithokMandan" = "Jaisithok",
+      "MusikotKhalanga" = "Musikot",
+      "Sinhadevisombare" = "Singhadevi",
+      "SisneriMahadevsthan" = "Sisneri",
+      # determined from map inspection
+      "KalikaN.P." = "Baglung N.P.",
+      "n.a. (1)" = "Raghunathpur",
+      "n.a. (2)" = "Rampurwa"
+    )
+gadm2$VDC_name <- revalue(gadm2$VDC_name, suggested_correction_manual)
+vdcs$VDC_name <- revalue(vdcs$VDC_name, suggested_correction_manual)
 
-suggested_corrections2 <- na.omit(ldply(gadmmissing$NAME_4_CORRECTED, function(name) {
-    data.frame(
-        old=name,
-        bestmatch=vdcs$VDC_name[pmatch(name, vdcs$VDC_name)],
-        stringsAsFactors=F
-    )}))
-# some manual additions
-suggested_corrections2 <- rbind(suggested_corrections2, data.frame(
-    old=c("Piparpati Jabadi", "NaikapPuranoBhanjya","PokharibhindaSamgra", # just missed above
-          "n.a. (1)", "n.a. (2)", "KalikaN.P."), # from manual map inspections
-    bestmatch=c("Paparpatijabdi", "Naikappuranobhanjyang", "Pokharibhindasamgrampur",
-                "Raghunathpur", "Rampurwa", "Baglung N.P.")))
+### Final missing
+x <- non_matching(vdcs, gadm2, 'District', 'NAME_3', 'VDC_name', 'VDC_name')
+vdcmissing <- x[[1]]
+gadmmissing <- subset(x[[2]], 
+                      !str_detect(VDC_name, 'Royal|Natio|Wildlife|Development'))
 
-gadm$NAME_4_CORRECTED <- recodeVar(gadm$NAME_4_CORRECTED,
-                                   na.omit(suggested_corrections2)$old,
-                                   na.omit(suggested_corrections2)$bestmatch)
-## FINAL MISSING
-vdcmissing <- vdcs[!vdcs$VDC_name %in% gadm$NAME_4_CORRECTED,c('District','VDC_name')]
-gadmmissing <- gadm[!gadm$NAME_4_CORRECTED %in% vdcs$VDC_name & 
-                        !str_detect(gadm$NAME_4_CORRECTED, 'Royal|Natio|Wildlife|Development'),
-                    c('NAME_3','NAME_4_CORRECTED')]
-corrections <- rbind(na.omit(suggested_corrections, suggested_corrections2))
+corrections <- ddply(gadm2, .(NAME_3), function(df) {
+    subset(df, df$VDC_name != df$NAME_4, select=c("NAME_3", "NAME_4", "VDC_name"))
+})
 
 ### OUTPUTS
-write.csv(gadmmissing, "data/MissingFromGADM.csv")
-write.csv(vdcmissing, "data/MissingFromVDCCodes.csv")
-write.csv(corrections, "data/Corrections.csv")
-write.csv(gadm, "data/NPL_adm4.csv")
+write.csv(arrange(gadmmissing, NAME_3, VDC_name), "data/MissingFromGADM.csv", row.names=F)
+write.csv(arrange(vdcmissing, District,VDC_name), "data/MissingFromVDCCodes.csv", row.names=F)
+write.csv(arrange(corrections, NAME_3), "data/Corrections.csv", row.names=F)
+write.csv(gadm2, "data/NPL_adm4.csv", row.names=F)
 
 ## FINAL task: polygon output
 ## subtask 1: pull in VDC Codes
-gadm <- rename(gadm, c('NAME_4_CORRECTED' = 'VDC_Name'))
-gadm$DistrictVDC <- str_c(gadm$NAME_3, gadm$VDC_Name)
+gadm2$DistrictVDC <- str_c(gadm$NAME_3, gadm$VDC_Name)
 vdcs$DistrictVDC <- str_c(vdcs$District, vdcs$VDC_name)
-f <- merge(gadm, vdcs, by="DistrictVDC")
+f <- merge(gadm2, vdcs, by="DistrictVDC")
 
 ## subtask 2: output
 gadm.shp <- readShapeSpatial('../NepalMaps/baselayers/NPL_adm/NPL_adm4.shp')
-gadm.shp@data <- merge(gadm.shp@data, subset(gadm, select=c("ID_4", "NAME_4_CORRECTED")), by="ID_4")
